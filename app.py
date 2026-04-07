@@ -4,754 +4,851 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import cross_val_score
 import warnings
 warnings.filterwarnings("ignore")
 
-# ─────────────────────────────────────────────
-# PAGE CONFIG
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
+# Page config
+# ─────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Buriram Tourism Dashboard",
-    page_icon="🏆",
+    page_title="Dashboard นักท่องเที่ยวบุรีรัมย์",
+    page_icon="🏍️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ─────────────────────────────────────────────
-# CUSTOM CSS
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
+# Custom CSS
+# ─────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main { background-color: #0e1117; }
+    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
     .metric-card {
-        background: linear-gradient(135deg, #1e2130, #2d3250);
-        border-radius: 12px;
-        padding: 20px;
-        border-left: 4px solid #7c3aed;
-        margin: 8px 0;
+        background: linear-gradient(135deg, #1e3a5f 0%, #2d6a9f 100%);
+        border-radius: 12px; padding: 20px; color: white;
+        text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     }
-    .metric-value { font-size: 2rem; font-weight: bold; color: #a78bfa; }
-    .metric-label { font-size: 0.85rem; color: #9ca3af; }
+    .metric-value { font-size: 2rem; font-weight: bold; }
+    .metric-label { font-size: 0.9rem; opacity: 0.85; margin-top: 4px; }
     .section-header {
-        background: linear-gradient(90deg, #7c3aed22, transparent);
-        padding: 10px 16px;
-        border-left: 3px solid #7c3aed;
-        border-radius: 4px;
-        margin-bottom: 1rem;
+        font-size: 1.4rem; font-weight: 700; color: #1e3a5f;
+        border-left: 5px solid #2d6a9f; padding-left: 12px; margin: 20px 0 10px 0;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: #1e2130;
-        border-radius: 8px;
-        padding: 4px;
+    .event-card {
+        background: #f8f9fa; border-radius: 10px; padding: 14px;
+        border-left: 4px solid #2d6a9f; margin-bottom: 10px;
     }
+    .event-card.negative { border-left-color: #e74c3c; }
+    .event-card.positive { border-left-color: #27ae60; }
+    .report-box {
+        background: linear-gradient(135deg, #f0f7ff, #e8f4e8);
+        border-radius: 14px; padding: 20px;
+        border: 1px solid #b3d4f0; margin-top: 16px;
+    }
+    .rank-badge {
+        display: inline-block; background: #2d6a9f; color: white;
+        border-radius: 50%; width: 28px; height: 28px;
+        text-align: center; line-height: 28px; font-weight: bold;
+        margin-right: 8px;
+    }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
-        background-color: transparent;
-        border-radius: 6px;
-        color: #9ca3af;
-        font-weight: 500;
+        background: #f0f4f8; border-radius: 8px 8px 0 0; font-weight: 600;
     }
-    .stTabs [aria-selected="true"] {
-        background-color: #7c3aed !important;
-        color: white !important;
-    }
-    .prediction-badge {
-        display: inline-block;
-        background: linear-gradient(135deg, #7c3aed, #a855f7);
-        color: white;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.8rem;
-        font-weight: bold;
-    }
-    .event-chip {
-        display: inline-block;
-        padding: 3px 10px;
-        border-radius: 12px;
-        font-size: 0.78rem;
-        margin: 2px;
-    }
-    .clean-step {
-        background: #1e2130;
-        border-radius: 8px;
-        padding: 12px 16px;
-        margin: 6px 0;
-        border-left: 3px solid #10b981;
-    }
+    .stTabs [aria-selected="true"] { background: #2d6a9f !important; color: white !important; }
 </style>
 """, unsafe_allow_html=True)
 
+# ─────────────────────────────────────────────────────────
+# CONSTANTS
+# ─────────────────────────────────────────────────────────
+MONTH_MAP = {
+    "มกราคม": 1, "กุมภาพันธ์": 2, "มีนาคม": 3,
+    "เมษายน": 4, "พฤษภาคม": 5, "มิถุนายน": 6,
+    "กรกฎาคม": 7, "สิงหาคม": 8, "กันยายน": 9,
+    "ตุลาคม": 10, "พฤศจิกายน": 11, "ธันวาคม": 12,
+    "มกราคม - มีนาคม": 1, "เมษายน - มิถุนายน": 4,
+    "กรกฎาคม - กันยายน": 7, "ตุลาคม - ธันวาคม": 10,
+}
+QUARTER_LABEL = {1: "Q1 (ม.ค.–มี.ค.)", 4: "Q2 (เม.ย.–มิ.ย.)",
+                  7: "Q3 (ก.ค.–ก.ย.)", 10: "Q4 (ต.ค.–ธ.ค.)"}
+MONTH_TH = {1:"มกราคม", 2:"กุมภาพันธ์", 3:"มีนาคม", 4:"เมษายน",
+            5:"พฤษภาคม", 6:"มิถุนายน", 7:"กรกฎาคม", 8:"สิงหาคม",
+            9:"กันยายน", 10:"ตุลาคม", 11:"พฤศจิกายน", 12:"ธันวาคม"}
+MONTH_SHORT = {1:"ม.ค.", 2:"ก.พ.", 3:"มี.ค.", 4:"เม.ย.", 5:"พ.ค.", 6:"มิ.ย.",
+               7:"ก.ค.", 8:"ส.ค.", 9:"ก.ย.", 10:"ต.ค.", 11:"พ.ย.", 12:"ธ.ค."}
 
-# ─────────────────────────────────────────────
+# เหตุการณ์และเดือนที่มักเกิด (ข้อมูลเพิ่มเติมสำหรับ Feature 4)
+EVENT_MONTHS = {
+    "MotoGP":            {"months": [10, 11], "quarter": "Q4 (ต.ค.–พ.ย.)", "label": "🏍️ MotoGP", "color": "#e74c3c"},
+    "Marathon":          {"months": [1, 2],   "quarter": "Q1 (ม.ค.–ก.พ.)", "label": "🏃 Marathon", "color": "#3498db"},
+    "PhanomRung_Festival":{"months": [4, 5],  "quarter": "Q2 (เม.ย.–พ.ค.)", "label": "🏯 Phanom Rung Festival", "color": "#e67e22"},
+    "Covid":             {"months": [3,4,5,6,7,8,9,10,11,12], "quarter": "ตลอดปี (ผลกระทบ 2563–2565)", "label": "🦠 COVID-19", "color": "#8e44ad"},
+}
+
+# ─────────────────────────────────────────────────────────
 # DATA LOADING & CLEANING
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
 @st.cache_data
-def load_and_clean_data():
-    """Load CSV and apply all cleaning steps. Returns cleaned df + log."""
-    df_raw = pd.read_csv("dataCI02-09-03-2569.csv")
-    log = []
+def load_and_clean(path="dataCI02-09-03-2569.csv"):
+    df_raw = pd.read_csv(path)
+    df = df_raw[df_raw["Total_vis"].notna()].copy()
+    num_cols = ["Total_vis", "Thai_vis", "Foreign_vis", "Guests_total",
+                "Rev_total", "Rev_thai", "Rev_foreign"]
+    for c in num_cols:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.replace(",", "", regex=False)
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["month_num"] = df["Month&Quarter"].map(MONTH_MAP)
+    quarterly_labels = {"มกราคม - มีนาคม", "เมษายน - มิถุนายน",
+                        "กรกฎาคม - กันยายน", "ตุลาคม - ธันวาคม"}
+    df["is_quarterly"] = df["Month&Quarter"].isin(quarterly_labels)
+    event_cols = ["MotoGP", "Covid", "Marathon", "PhanomRung_Festival"]
+    df[event_cols] = df[event_cols].fillna(0)
+    df["Year_CE"] = df["Year"] - 543
+    df = df.sort_values(["Year", "month_num"]).reset_index(drop=True)
+    return df
 
-    # STEP 1: Separate monthly vs quarterly rows
-    monthly_labels = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
-                      'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
-    quarter_labels = ['มกราคม - มีนาคม','เมษายน - มิถุนายน','กรกฎาคม - กันยายน','ตุลาคม - ธันวาคม']
-
-    df_quarterly = df_raw[df_raw['Month&Quarter'].isin(quarter_labels)].copy()
-    df_monthly_raw = df_raw[df_raw['Month&Quarter'].isin(monthly_labels)].copy()
-    log.append("✅ **แยกแถวรายเดือน vs รายไตรมาส** — ข้อมูลในไฟล์มีทั้งแถวรายเดือนและรายไตรมาสปนกัน จึงแยกออกก่อนประมวลผล")
-
-    # STEP 2: Keep only rows that have Total_vis (remove duplicate football sub-rows)
-    before = len(df_quarterly)
-    df_quarterly = df_quarterly[df_quarterly['Total_vis'].notna()].copy()
-    removed = before - len(df_quarterly)
-    log.append(f"✅ **ลบแถวซ้ำ/แถวว่าง (quarterly)** — ลบ {removed} แถวที่ไม่มีข้อมูลนักท่องเที่ยว (แถว football sub-rows ที่ duplicate)")
-
-    before_m = len(df_monthly_raw)
-    df_monthly_clean = df_monthly_raw[df_monthly_raw['Total_vis'].notna()].copy()
-    removed_m = before_m - len(df_monthly_clean)
-    log.append(f"✅ **ลบแถวซ้ำ/แถวว่าง (monthly)** — ลบ {removed_m} แถวที่ไม่มีข้อมูลนักท่องเที่ยว")
-
-    # STEP 3: Convert string numbers with commas to int/float
-    num_cols = ['Total_vis','Thai_vis','Foreign_vis','Guests_total']
-    for col in num_cols:
-        for d in [df_quarterly, df_monthly_clean]:
-            if col in d.columns:
-                d[col] = d[col].astype(str).str.replace(',', '').str.strip()
-                d[col] = pd.to_numeric(d[col], errors='coerce')
-    log.append("✅ **แปลง String → Numeric** — คอลัมน์ Total_vis, Thai_vis, Foreign_vis, Guests_total มี comma (เช่น '325,805') → แปลงเป็น int")
-
-    # STEP 4: Convert Thai Buddhist Year to Christian Year
-    for d in [df_quarterly, df_monthly_clean]:
-        d['Year_CE'] = d['Year'] - 543
-    log.append("✅ **แปลงปีพุทธศักราช → คริสต์ศักราช** — Year (พ.ศ.) - 543 = Year_CE (ค.ศ.) เพื่อใช้ใน time-series model")
-
-    # STEP 5: Map quarters to numeric (1-4)
-    quarter_map = {
-        'มกราคม - มีนาคม': 1,
-        'เมษายน - มิถุนายน': 2,
-        'กรกฎาคม - กันยายน': 3,
-        'ตุลาคม - ธันวาคม': 4
-    }
-    df_quarterly['Quarter'] = df_quarterly['Month&Quarter'].map(quarter_map)
-    log.append("✅ **Map ชื่อไตรมาส → ตัวเลข** — 'มกราคม - มีนาคม' → 1, ... 'ตุลาคม - ธันวาคม' → 4")
-
-    # STEP 6: Fill NaN in event columns with 0
-    event_cols = ['MotoGP','Covid','Marathon','PhanomRung_Festival']
-    for d in [df_quarterly, df_monthly_clean]:
-        for col in event_cols:
-            if col in d.columns:
-                d[col] = d[col].fillna(0)
-    log.append("✅ **Fill NaN ใน Event columns → 0** — MotoGP, Covid, Marathon, PhanomRung_Festival ที่เป็น NaN หมายความว่าไม่มีอีเวนต์ จึงแทนด้วย 0")
-
-    # STEP 7: Handle Revenue column (Rev_total has commas in some rows)
-    for d in [df_quarterly, df_monthly_clean]:
-        if 'Rev_total' in d.columns:
-            d['Rev_total'] = pd.to_numeric(
-                d['Rev_total'].astype(str).str.replace(',',''), errors='coerce'
-            )
-    log.append("✅ **แปลง Rev_total → float** — ข้อมูลรายได้บางแถวมี comma จึงทำความสะอาดเหมือนกับ visitor columns")
-
-    # STEP 8: Add Football_count per month/quarter
-    football_by_period = (
-        df_raw[df_raw['Football_match'].notna()]
-        .groupby(['Year','Month&Quarter'])
-        .size()
-        .reset_index(name='Football_count')
+@st.cache_data
+def build_annual(_df):
+    annual = (
+        _df.groupby("Year")
+        .agg(
+            Total_vis=("Total_vis", "sum"),
+            Thai_vis=("Thai_vis", "sum"),
+            Foreign_vis=("Foreign_vis", "sum"),
+            Rev_total=("Rev_total", "sum"),
+            MotoGP=("MotoGP", "max"),
+            Covid=("Covid", "max"),
+            Marathon=("Marathon", "max"),
+            PhanomRung_Festival=("PhanomRung_Festival", "max"),
+        ).reset_index()
     )
-    df_quarterly = df_quarterly.merge(football_by_period, on=['Year','Month&Quarter'], how='left')
-    df_quarterly['Football_count'] = df_quarterly['Football_count'].fillna(0)
-    df_monthly_clean = df_monthly_clean.merge(football_by_period, on=['Year','Month&Quarter'], how='left')
-    df_monthly_clean['Football_count'] = df_monthly_clean['Football_count'].fillna(0)
-    log.append("✅ **นับจำนวนแมตช์ฟุตบอลต่อช่วงเวลา** — รวมจำนวน Football_match ต่อ Year+Month/Quarter เป็น feature 'Football_count'")
-
-    # STEP 9: Drop rows where Total_vis is still NaN after all cleaning
-    before_q = len(df_quarterly)
-    df_quarterly = df_quarterly.dropna(subset=['Total_vis'])
-    log.append(f"✅ **Drop แถวที่ Total_vis ยัง NaN** — ลบออก {before_q - len(df_quarterly)} แถวสุดท้ายที่ไม่มีข้อมูล")
-
-    # STEP 10: Sort by Year + Quarter
-    df_quarterly = df_quarterly.sort_values(['Year_CE','Quarter']).reset_index(drop=True)
-    df_monthly_clean = df_monthly_clean.sort_values('Year_CE').reset_index(drop=True)
-    log.append("✅ **Sort ตามปี + ไตรมาส** — เรียงข้อมูลตามลำดับเวลาเพื่อใช้ใน time-series analysis")
-
-    return df_quarterly, df_monthly_clean, log
-
+    annual["Year_CE"] = annual["Year"] - 543
+    annual["prev_vis"] = annual["Total_vis"].shift(1)
+    annual["prev2_vis"] = annual["Total_vis"].shift(2)
+    annual = annual.dropna(subset=["prev_vis", "prev2_vis"])
+    return annual
 
 @st.cache_data
-def train_and_evaluate(df):
-    """Train 4 models, return best model + metrics + predictions for 2026."""
-    features = ['Year_CE','Quarter','MotoGP','Covid','Marathon','PhanomRung_Festival','Football_count']
-    target = 'Total_vis'
-
-    X = df[features].values
-    y = df[target].values
-
+def train_models(_annual):
+    feat_cols = ["Year_CE", "prev_vis", "prev2_vis",
+                 "MotoGP", "Covid", "Marathon", "PhanomRung_Festival"]
+    X = _annual[feat_cols].values
+    y = _annual["Total_vis"].values
     models = {
-        'Linear Regression': LinearRegression(),
-        'Ridge Regression': Ridge(alpha=1.0),
-        'Random Forest': RandomForestRegressor(n_estimators=200, random_state=42),
-        'Gradient Boosting': GradientBoostingRegressor(n_estimators=200, learning_rate=0.05, random_state=42)
+        "Linear Regression": LinearRegression(),
+        "Ridge Regression":  Ridge(alpha=1.0),
+        "Random Forest":     RandomForestRegressor(n_estimators=200, random_state=42),
+        "Gradient Boosting": GradientBoostingRegressor(n_estimators=200, random_state=42),
     }
-
     results = {}
     for name, model in models.items():
         model.fit(X, y)
         y_pred = model.predict(X)
-        mae = mean_absolute_error(y, y_pred)
-        rmse = np.sqrt(mean_squared_error(y, y_pred))
-        r2 = r2_score(y, y_pred)
-        cv_r2 = cross_val_score(model, X, y, cv=min(5, len(X)), scoring='r2').mean()
         results[name] = {
-            'model': model,
-            'MAE': mae,
-            'RMSE': rmse,
-            'R2': r2,
-            'CV_R2': cv_r2,
-            'y_pred': y_pred
+            "model": model,
+            "MAE":  mean_absolute_error(y, y_pred),
+            "RMSE": np.sqrt(mean_squared_error(y, y_pred)),
+            "R2":   r2_score(y, y_pred),
+            "y_pred": y_pred,
         }
+    return results, feat_cols
 
-    # Best model = highest CV R2 (cross-validation generalisation)
-    # For small datasets (n=44), CV_R2 may be negative for complex models due to overfitting.
-    # We pick the model with the LEAST negative (i.e. highest) CV_R2, which favours Ridge/Linear.
-    best_name = max(results, key=lambda k: results[k]['CV_R2'])
+# ─────────────────────────────────────────────────────────
+# PREDICT 2569 (ปี CE = 2026)
+# ─────────────────────────────────────────────────────────
+def predict_2569(model, annual, event_override=None):
+    last   = annual.iloc[-1]
+    prev2  = annual.iloc[-2]["Total_vis"] if len(annual) >= 2 else last["Total_vis"]
+    events = event_override or {"MotoGP": 1, "Covid": 0, "Marathon": 1, "PhanomRung_Festival": 1}
+    X_new  = np.array([[2026, last["Total_vis"], prev2,
+                         events["MotoGP"], events["Covid"],
+                         events["Marathon"], events["PhanomRung_Festival"]]])
+    return float(model.predict(X_new)[0])
 
-    # Predict 2026 (Year_CE=2026)
-    # Events for 2026 (2569 BE): MotoGP Q1=1, Marathon Q1=1, PhanomRung Q2=1
-    pred_2026 = []
-    event_2026 = {1: {'MotoGP':1,'Marathon':1,'PhanomRung_Festival':0,'Football_count':3},
-                  2: {'MotoGP':0,'Marathon':0,'PhanomRung_Festival':1,'Football_count':4},
-                  3: {'MotoGP':0,'Marathon':0,'PhanomRung_Festival':0,'Football_count':3},
-                  4: {'MotoGP':0,'Marathon':0,'PhanomRung_Festival':0,'Football_count':3}}
-    best_model = results[best_name]['model']
-    for q in [1,2,3,4]:
-        ev = event_2026[q]
-        x_pred = [[2026, q, ev['MotoGP'], 0, ev['Marathon'], ev['PhanomRung_Festival'], ev['Football_count']]]
-        pred_val = best_model.predict(x_pred)[0]
-        pred_2026.append({'Quarter': q, 'Predicted_Total': max(0, pred_val)})
+# ─────────────────────────────────────────────────────────
+# MONTHLY FORECAST 2569
+# ─────────────────────────────────────────────────────────
+def forecast_monthly_2569(annual, monthly_df, total_2569):
+    """
+    แจกแจงยอดรวมปี 2569 ตามสัดส่วนเฉลี่ยรายเดือนจากข้อมูลจริง
+    """
+    if monthly_df.empty or monthly_df["month_num"].isna().all():
+        # fallback: กระจายเท่ากัน
+        months = list(range(1, 13))
+        share  = [1/12]*12
+    else:
+        pivot = (monthly_df.groupby("month_num")
+                 .agg(Total=("Total_vis","mean"),
+                      Thai=("Thai_vis","mean"),
+                      Foreign=("Foreign_vis","mean"))
+                 .reset_index())
+        pivot["share"]         = pivot["Total"] / pivot["Total"].sum()
+        pivot["thai_share"]    = pivot["Thai"]   / pivot["Thai"].sum()
+        pivot["foreign_share"] = pivot["Foreign"]/ pivot["Foreign"].sum()
+        return pivot
 
-    # Also predict Thai and Foreign separately
-    for col, colname in [('Thai_vis','Predicted_Thai'), ('Foreign_vis','Predicted_Foreign')]:
-        yc = df[col].values
-        mc = type(best_model).__new__(type(best_model))
-        mc.__dict__.update(type(best_model)(**{k: v for k, v in best_model.get_params().items()}).__dict__)
-        mc = type(best_model)(**best_model.get_params())
-        mc.fit(X, yc)
-        for i, q in enumerate([1,2,3,4]):
-            ev = event_2026[q]
-            x_pred = [[2026, q, ev['MotoGP'], 0, ev['Marathon'], ev['PhanomRung_Festival'], ev['Football_count']]]
-            pred_2026[i][colname] = max(0, mc.predict(x_pred)[0])
+    return None
 
-    return results, best_name, pd.DataFrame(pred_2026)
-
-
-# ─────────────────────────────────────────────
-# MONTH MAPPING
-# ─────────────────────────────────────────────
-month_order = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
-               'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
-month_num = {m: i+1 for i, m in enumerate(month_order)}
-quarter_name = {1:'Q1 ม.ค.-มี.ค.', 2:'Q2 เม.ย.-มิ.ย.', 3:'Q3 ก.ค.-ก.ย.', 4:'Q4 ต.ค.-ธ.ค.'}
-
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
 # LOAD DATA
-# ─────────────────────────────────────────────
-df_q, df_m, clean_log = load_and_clean_data()
-results, best_name, pred_2026 = train_and_evaluate(df_q)
+# ─────────────────────────────────────────────────────────
+df     = load_and_clean()
+annual = build_annual(df)
+model_results, feat_cols = train_models(annual)
+best_name  = max(model_results, key=lambda k: model_results[k]["R2"])
+best_model = model_results[best_name]["model"]
 
-# ─────────────────────────────────────────────
+monthly_df  = df[~df["is_quarterly"]].copy()
+quarterly_df = df[df["is_quarterly"]].copy()
+
+# ─────────────────────────────────────────────────────────
 # SIDEBAR
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/th/thumb/1/12/BuriramUnited.png/120px-BuriramUnited.png", width=80)
-    st.title("🏆 บึรีรัมย์ Tourism")
-    st.caption("สถิติการท่องเที่ยวจังหวัดบุรีรัมย์")
-    st.divider()
-    
-    page = st.radio("📂 เมนูหลัก", [
-        "🏠 ภาพรวม Dashboard",
-        "🔍 Data Cleaning",
-        "🤖 Model Comparison",
-        "📈 ทำนายปี 2569",
-        "🎪 อีเวนต์ & ผลกระทบ",
-        "📅 สถิติรายปี",
-        "📊 รายงานทำนาย Top 5 เดือน"
-    ])
-    
-    st.divider()
-    st.markdown("**ข้อมูล:** ปี 2556–2568 (พ.ศ.)")
-    st.markdown(f"**Model ที่ดีที่สุด:** 🥇 {best_name}")
-    r2 = results[best_name]['R2']
-    st.markdown(f"**R² Score:** `{r2:.4f}`")
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Seal_Buriram.svg/200px-Seal_Buriram.svg.png", width=80)
+    st.markdown("## 🏍️ Dashboard บุรีรัมย์")
+    st.markdown("---")
 
-
-# ─────────────────────────────────────────────
-# PAGE 1: DASHBOARD OVERVIEW
-# ─────────────────────────────────────────────
-if page == "🏠 ภาพรวม Dashboard":
-    st.title("🏆 Dashboard การท่องเที่ยวบุรีรัมย์")
-    st.caption("ข้อมูลสถิติและการคาดการณ์นักท่องเที่ยว จังหวัดบุรีรัมย์")
-    
-    # Latest year KPIs (2567 BE = 2024 CE = complete year)
-    latest = df_q[df_q['Year_CE'] == 2024]
-    if len(latest) < 4:
-        latest = df_q[df_q['Year_CE'] == df_q['Year_CE'].max()]
-    total_latest = latest['Total_vis'].sum()
-    thai_latest = latest['Thai_vis'].sum()
-    foreign_latest = latest['Foreign_vis'].sum()
-    
-    prev_year = df_q[df_q['Year_CE'] == (latest['Year_CE'].iloc[0] - 1)]
-    total_prev = prev_year['Total_vis'].sum() if len(prev_year) > 0 else total_latest
-    yoy = ((total_latest - total_prev) / total_prev * 100) if total_prev > 0 else 0
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("👥 นักท่องเที่ยวรวม", f"{int(total_latest):,}", f"{yoy:+.1f}% YoY")
-    with col2:
-        st.metric("🇹🇭 นักท่องเที่ยวไทย", f"{int(thai_latest):,}", f"{thai_latest/total_latest*100:.1f}%")
-    with col3:
-        st.metric("✈️ นักท่องเที่ยวต่างชาติ", f"{int(foreign_latest):,}", f"{foreign_latest/total_latest*100:.1f}%")
-    with col4:
-        pred_total_2026 = pred_2026['Predicted_Total'].sum()
-        st.metric("🔮 ทำนายปี 2569", f"{int(pred_total_2026):,}", f"{'↑' if pred_total_2026 > total_latest else '↓'} vs ปีก่อน")
-
-    st.divider()
-    
-    # Line chart all years
-    yearly = df_q.groupby('Year_CE').agg({'Total_vis':'sum','Thai_vis':'sum','Foreign_vis':'sum'}).reset_index()
-    yearly['Year_BE'] = yearly['Year_CE'] + 543
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=yearly['Year_BE'], y=yearly['Total_vis'],
-        mode='lines+markers', name='รวม', line=dict(color='#a78bfa', width=3),
-        marker=dict(size=8)))
-    fig.add_trace(go.Scatter(x=yearly['Year_BE'], y=yearly['Thai_vis'],
-        mode='lines+markers', name='ไทย', line=dict(color='#34d399', width=2)))
-    fig.add_trace(go.Scatter(x=yearly['Year_BE'], y=yearly['Foreign_vis'],
-        mode='lines+markers', name='ต่างชาติ', line=dict(color='#f59e0b', width=2)))
-    
-    # Add 2569 prediction
-    pred_sum = pred_2026['Predicted_Total'].sum()
-    fig.add_trace(go.Scatter(x=[2568, 2569], 
-        y=[yearly[yearly['Year_BE']==2568]['Total_vis'].values[0] if 2568 in yearly['Year_BE'].values else pred_sum, pred_sum],
-        mode='lines+markers', name='ทำนาย 2569',
-        line=dict(color='#f43f5e', width=2, dash='dash'), marker=dict(size=10, symbol='star')))
-    
-    fig.update_layout(
-        title="นักท่องเที่ยวบุรีรัมย์รายปี (2556–2569)", height=380,
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e5e7eb'), xaxis=dict(gridcolor='#374151'),
-        yaxis=dict(gridcolor='#374151'), legend=dict(bgcolor='rgba(0,0,0,0)')
+    selected_tab = st.radio(
+        "เมนูหลัก",
+        ["🏠 ภาพรวม", "📈 การทำนายปี 2569", "📅 สถิติรายปี",
+         "🎪 ผลกระทบเหตุการณ์", "📋 รายงานทำนายรายเดือน", "🤖 เปรียบเทียบโมเดล"],
+        index=0
     )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Quarterly breakdown heatmap
-    col1, col2 = st.columns(2)
-    with col1:
-        pivot = df_q.pivot_table(values='Total_vis', index='Year', columns='Quarter', aggfunc='sum')
-        pivot.columns = ['Q1','Q2','Q3','Q4']
-        fig2 = px.imshow(pivot, text_auto='.3s', aspect='auto',
-            color_continuous_scale='Purples', title='Heatmap นักท่องเที่ยวรายไตรมาส')
-        fig2.update_layout(height=350, paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#e5e7eb'))
-        st.plotly_chart(fig2, use_container_width=True)
-    
-    with col2:
-        # Event impact summary
-        event_impact = {}
-        for ev in ['MotoGP','Marathon','PhanomRung_Festival','Covid']:
-            with_ev = df_q[df_q[ev] == 1]['Total_vis'].mean()
-            without_ev = df_q[df_q[ev] == 0]['Total_vis'].mean()
-            event_impact[ev] = with_ev - without_ev
-        
-        labels = {'MotoGP':'🏍️ MotoGP','Marathon':'🏃 Marathon','PhanomRung_Festival':'🏛️ Phanom Rung','Covid':'😷 COVID-19'}
-        colors = ['#a78bfa' if v > 0 else '#f87171' for v in event_impact.values()]
-        fig3 = go.Figure(go.Bar(
-            x=list(event_impact.values()),
-            y=[labels[k] for k in event_impact],
-            orientation='h',
-            marker_color=colors
+
+    st.markdown("---")
+    st.markdown("### ⚙️ ตั้งค่าการทำนายปี 2569")
+    motogp_2569    = st.selectbox("MotoGP 2569",    [1, 0], format_func=lambda x: "มี" if x else "ไม่มี")
+    marathon_2569  = st.selectbox("Marathon 2569",  [1, 0], format_func=lambda x: "มี" if x else "ไม่มี")
+    phanomrung_2569= st.selectbox("Phanom Rung 2569",[1, 0], format_func=lambda x: "มี" if x else "ไม่มี")
+    covid_2569     = st.selectbox("COVID 2569",     [0, 1], format_func=lambda x: "มี" if x else "ไม่มี")
+
+    event_settings = {
+        "MotoGP": motogp_2569, "Covid": covid_2569,
+        "Marathon": marathon_2569, "PhanomRung_Festival": phanomrung_2569
+    }
+    pred_2569_custom = predict_2569(best_model, annual, event_settings)
+    st.markdown(f"**📌 ผลทำนายรวมปี 2569**")
+    st.success(f"**{pred_2569_custom:,.0f} คน**")
+    st.caption(f"โมเดลที่ใช้: {best_name}")
+    st.markdown("---")
+    st.caption("ข้อมูล: สถิตินักท่องเที่ยวบุรีรัมย์ 2556–2568")
+
+# ─────────────────────────────────────────────────────────
+# TITLE
+# ─────────────────────────────────────────────────────────
+st.markdown("""
+<div style='background: linear-gradient(135deg,#1e3a5f,#2d6a9f);
+            padding:24px 32px;border-radius:16px;color:white;margin-bottom:24px;'>
+    <h1 style='margin:0;font-size:2rem;'>🏍️ Dashboard นักท่องเที่ยวจังหวัดบุรีรัมย์</h1>
+    <p style='margin:6px 0 0;opacity:.85;font-size:1rem;'>
+        ข้อมูลสถิติและการพยากรณ์นักท่องเที่ยว ปี 2556–2569
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════
+# TAB 1: ภาพรวม
+# ═══════════════════════════════════════════════════════════
+if selected_tab == "🏠 ภาพรวม":
+    latest_year = annual.iloc[-1]
+    prev_year   = annual.iloc[-2]
+
+    col1, col2, col3, col4 = st.columns(4)
+    def kpi(col, label, value, delta=None):
+        delta_html = ""
+        if delta is not None:
+            color = "lightgreen" if delta >= 0 else "#ff6b6b"
+            arrow = "▲" if delta >= 0 else "▼"
+            delta_html = f"<div style='color:{color};font-size:.85rem;'>{arrow} {abs(delta):,.0f}</div>"
+        col.markdown(f"""
+        <div class='metric-card'>
+            <div class='metric-value'>{value:,.0f}</div>
+            <div class='metric-label'>{label}</div>
+            {delta_html}
+        </div>""", unsafe_allow_html=True)
+
+    with col1: kpi(col1, f"รวมปี {int(latest_year['Year'])}", latest_year["Total_vis"],
+                   delta=latest_year["Total_vis"]-prev_year["Total_vis"])
+    with col2: kpi(col2, "นักท่องเที่ยวไทย", latest_year["Thai_vis"])
+    with col3: kpi(col3, "นักท่องเที่ยวต่างชาติ", latest_year["Foreign_vis"])
+    with col4: kpi(col4, "🔮 คาดการณ์ปี 2569", pred_2569_custom,
+                   delta=pred_2569_custom-latest_year["Total_vis"])
+
+    st.markdown("---")
+    st.markdown("<div class='section-header'>📊 แนวโน้มนักท่องเที่ยวรายปี (2556–2568)</div>", unsafe_allow_html=True)
+
+    fig_trend = go.Figure()
+    fig_trend.add_trace(go.Scatter(
+        x=annual["Year"], y=annual["Total_vis"],
+        mode="lines+markers+text", name="จริง",
+        line=dict(color="#2d6a9f", width=3), marker=dict(size=8),
+        text=[f"{v/1e6:.2f}M" for v in annual["Total_vis"]],
+        textposition="top center"
+    ))
+    fig_trend.add_trace(go.Scatter(
+        x=[annual["Year"].iloc[-1], 2569], y=[annual["Total_vis"].iloc[-1], pred_2569_custom],
+        mode="lines+markers", name="ทำนาย 2569",
+        line=dict(color="#e74c3c", width=2, dash="dash"),
+        marker=dict(size=12, color="#e74c3c")
+    ))
+    fig_trend.add_annotation(x=2569, y=pred_2569_custom,
+        text=f"<b>2569 ≈ {pred_2569_custom/1e6:.2f}M</b>",
+        showarrow=True, arrowhead=2, bgcolor="#e74c3c", font=dict(color="white"))
+    fig_trend.add_vrect(x0=2562.5, x1=2565.5, fillcolor="rgba(231,76,60,0.1)",
+                        line_width=0, annotation_text="COVID-19", annotation_position="top left")
+    fig_trend.update_layout(height=400, plot_bgcolor="white", paper_bgcolor="white",
+                            xaxis_title="ปี (พ.ศ.)", yaxis_title="จำนวนนักท่องเที่ยว (คน)")
+    st.plotly_chart(fig_trend, use_container_width=True)
+
+    annual_clean = annual.dropna(subset=["Thai_vis", "Foreign_vis"])
+    fig_bar = go.Figure()
+    fig_bar.add_trace(go.Bar(x=annual_clean["Year"], y=annual_clean["Thai_vis"],
+                             name="ไทย", marker_color="#2d6a9f"))
+    fig_bar.add_trace(go.Bar(x=annual_clean["Year"], y=annual_clean["Foreign_vis"],
+                             name="ต่างชาติ", marker_color="#e67e22"))
+    fig_bar.update_layout(barmode="stack", height=360, plot_bgcolor="white", paper_bgcolor="white",
+                          xaxis_title="ปี (พ.ศ.)", yaxis_title="จำนวน (คน)",
+                          title="สัดส่วนนักท่องเที่ยวไทย vs ต่างชาติ")
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+# ═══════════════════════════════════════════════════════════
+# TAB 2: การทำนายปี 2569  (Feature 1)
+# ═══════════════════════════════════════════════════════════
+elif selected_tab == "📈 การทำนายปี 2569":
+    st.markdown("<div class='section-header'>🔮 การพยากรณ์ปี 2569 ด้วยโมเดล ML</div>", unsafe_allow_html=True)
+
+    col_a, col_b = st.columns([1, 2])
+    with col_a:
+        st.info(f"""
+        **โมเดลที่ดีที่สุด**: {best_name}  
+        **R²**: {model_results[best_name]['R2']:.4f}  
+        **MAE**: {model_results[best_name]['MAE']:,.0f}  
+        **RMSE**: {model_results[best_name]['RMSE']:,.0f}  
+
+        **📌 ผลการทำนายปี 2569**  
+        (ตามค่าที่ตั้งใน Sidebar)
+        """)
+        st.metric("คาดการณ์รวม", f"{pred_2569_custom:,.0f} คน",
+                  delta=f"{pred_2569_custom - annual['Total_vis'].iloc[-1]:+,.0f} จากปี 2568")
+
+    with col_b:
+        model_names = list(model_results.keys())
+        r2_vals = [model_results[m]["R2"] for m in model_names]
+        pred_vals = [predict_2569(model_results[m]["model"], annual, event_settings) for m in model_names]
+
+        fig_r2 = go.Figure(go.Bar(
+            x=r2_vals, y=model_names, orientation="h",
+            marker_color=["#e74c3c" if m == best_name else "#2d6a9f" for m in model_names],
+            text=[f"R²={v:.4f}" for v in r2_vals], textposition="inside"
         ))
-        fig3.update_layout(title='ผลกระทบของอีเวนต์ต่อจำนวนนักท่องเที่ยว (avg diff)',
-            height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#e5e7eb'), xaxis=dict(gridcolor='#374151'))
-        st.plotly_chart(fig3, use_container_width=True)
+        fig_r2.update_layout(title="R² Score ของแต่ละโมเดล", height=260,
+                             xaxis_range=[0,1], plot_bgcolor="white", paper_bgcolor="white")
+        st.plotly_chart(fig_r2, use_container_width=True)
 
+    st.markdown("---")
 
-# ─────────────────────────────────────────────
-# PAGE 2: DATA CLEANING
-# ─────────────────────────────────────────────
-elif page == "🔍 Data Cleaning":
-    st.title("🔍 ขั้นตอนการ Clean ข้อมูล")
-    st.info(f"ข้อมูลต้นฉบับ: **209 แถว × 25 คอลัมน์** → หลัง clean เหลือ **{len(df_q)} แถว quarterly** + **{len(df_m)} แถว monthly**")
-    
-    st.markdown("### 📋 สิ่งที่ทำในการ Clean ข้อมูล")
-    for i, step in enumerate(clean_log, 1):
-        st.markdown(f"""<div class='clean-step'><b>Step {i}:</b> {step}</div>""", unsafe_allow_html=True)
-    
-    st.divider()
-    st.markdown("### 📊 ตัวอย่างข้อมูลหลัง Clean (Quarterly)")
-    
-    show_cols = ['Year','Year_CE','Month&Quarter','Quarter','Total_vis','Thai_vis','Foreign_vis',
-                 'Occ_rate','Rev_total','MotoGP','Covid','Marathon','PhanomRung_Festival','Football_count']
-    display_df = df_q[show_cols].copy()
-    display_df = display_df.rename(columns={'Month&Quarter': 'ช่วงเวลา', 'Year_CE': 'ปี ค.ศ.',
-                                             'Total_vis': 'นักท่องเที่ยวรวม', 'Thai_vis': 'นักท่องเที่ยวไทย',
-                                             'Foreign_vis': 'นักท่องเที่ยวต่างชาติ'})
-    st.dataframe(display_df, use_container_width=True, height=400)
-    
-    st.divider()
-    st.markdown("### 📊 สถิติเบื้องต้นหลัง Clean")
-    st.dataframe(df_q[['Total_vis','Thai_vis','Foreign_vis','Occ_rate','Rev_total']].describe().round(2), 
-                 use_container_width=True)
+    # ── การทำนายรายโมเดลทุกโมเดล ──
+    st.markdown("<div class='section-header'>📊 ผลทำนายปี 2569 จากทุกโมเดล</div>", unsafe_allow_html=True)
+    col_cards = st.columns(4)
+    for i, (mname, res) in enumerate(model_results.items()):
+        p = predict_2569(res["model"], annual, event_settings)
+        with col_cards[i]:
+            badge = "🏆 " if mname == best_name else ""
+            st.markdown(f"""
+            <div class='metric-card' style='{"background:linear-gradient(135deg,#c0392b,#e74c3c);" if mname==best_name else ""}'>
+                <div style='font-size:.8rem;opacity:.8;'>{badge}{mname}</div>
+                <div class='metric-value' style='font-size:1.4rem;'>{p:,.0f}</div>
+                <div class='metric-label'>คน (ปี 2569)</div>
+                <div style='font-size:.75rem;opacity:.7;'>R²={res["R2"]:.3f}</div>
+            </div>""", unsafe_allow_html=True)
 
+    st.markdown("---")
+    st.markdown("<div class='section-header'>📉 ข้อมูลจริง vs ทำนาย</div>", unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────
-# PAGE 3: MODEL COMPARISON
-# ─────────────────────────────────────────────
-elif page == "🤖 Model Comparison":
-    st.title("🤖 เปรียบเทียบโมเดล Machine Learning")
-    
-    st.info("""
-    **Features ที่ใช้:** ปี (Year_CE), ไตรมาส (Quarter), MotoGP, Covid, Marathon, PhanomRung_Festival, Football_count  
-    **Target:** จำนวนนักท่องเที่ยวรวม (Total_vis) — รายไตรมาส
-    """)
-    
-    # Metrics table
+    fig_pred = go.Figure()
+    fig_pred.add_trace(go.Scatter(x=annual["Year"], y=annual["Total_vis"],
+        mode="lines+markers", name="ข้อมูลจริง",
+        line=dict(color="#2d6a9f", width=3)))
+    fig_pred.add_trace(go.Scatter(x=annual["Year"],
+        y=model_results[best_name]["y_pred"],
+        mode="lines+markers", name=f"ทำนาย ({best_name})",
+        line=dict(color="#e67e22", width=2, dash="dot")))
+    fig_pred.add_trace(go.Scatter(x=[2569], y=[pred_2569_custom],
+        mode="markers", name="พยากรณ์ 2569",
+        marker=dict(size=16, color="#e74c3c", symbol="star")))
+    fig_pred.update_layout(height=400, plot_bgcolor="white", paper_bgcolor="white",
+                           xaxis_title="ปี (พ.ศ.)", yaxis_title="นักท่องเที่ยว (คน)")
+    st.plotly_chart(fig_pred, use_container_width=True)
+
+    # Sensitivity
+    st.markdown("<div class='section-header'>🔧 วิเคราะห์ความไว — Sensitivity Analysis</div>", unsafe_allow_html=True)
+    scenarios = []
+    for motogp in [0,1]:
+        for covid in [0,1]:
+            for marathon in [0,1]:
+                for phanomrung in [0,1]:
+                    ev = {"MotoGP":motogp,"Covid":covid,"Marathon":marathon,"PhanomRung_Festival":phanomrung}
+                    p  = predict_2569(best_model, annual, ev)
+                    label = (f"MotoGP={'✓' if motogp else '✗'} | COVID={'✓' if covid else '✗'} | "
+                             f"Marathon={'✓' if marathon else '✗'} | PhanomRung={'✓' if phanomrung else '✗'}")
+                    scenarios.append({"Scenario": label, "Prediction": p})
+    df_sc = pd.DataFrame(scenarios).sort_values("Prediction", ascending=False)
+    fig_sc = px.bar(df_sc.head(10), x="Prediction", y="Scenario",
+                    orientation="h", color="Prediction",
+                    color_continuous_scale="Blues",
+                    title="Top 10 สถานการณ์คาดการณ์ปี 2569")
+    fig_sc.update_layout(height=440, plot_bgcolor="white", paper_bgcolor="white")
+    st.plotly_chart(fig_sc, use_container_width=True)
+
+# ═══════════════════════════════════════════════════════════
+# TAB 3: สถิติรายปี  (Feature 3)
+# ═══════════════════════════════════════════════════════════
+elif selected_tab == "📅 สถิติรายปี":
+    st.markdown("<div class='section-header'>📅 สถิตินักท่องเที่ยวรายปี — ดูข้อมูลเก่าแต่ละปี</div>",
+                unsafe_allow_html=True)
+
+    all_years = sorted(df["Year"].unique(), reverse=True)
+    sel_year  = st.selectbox("🔍 เลือกปีที่ต้องการดู (พ.ศ.)", all_years)
+
+    year_data = df[df["Year"] == sel_year].copy()
+    is_quarterly = year_data["is_quarterly"].all()
+
+    annual_row = annual[annual["Year"] == sel_year]
+    if not annual_row.empty:
+        ar = annual_row.iloc[0]
+        col1,col2,col3,col4 = st.columns(4)
+        col1.metric("รวมทั้งปี", f"{ar['Total_vis']:,.0f} คน")
+        col2.metric("นักท่องเที่ยวไทย", f"{ar['Thai_vis']:,.0f} คน" if ar['Thai_vis']>0 else "N/A")
+        col3.metric("นักท่องเที่ยวต่างชาติ", f"{ar['Foreign_vis']:,.0f} คน" if ar['Foreign_vis']>0 else "N/A")
+        events_this_year = []
+        for ev, info in EVENT_MONTHS.items():
+            if ar[ev] == 1:
+                events_this_year.append(info["label"])
+        col4.metric("เหตุการณ์สำคัญ", ", ".join(events_this_year) if events_this_year else "ไม่มี")
+
+    st.markdown("---")
+
+    # แสดงกราฟตามประเภทข้อมูล
+    if is_quarterly:
+        year_data["quarter_label"] = year_data["month_num"].map(QUARTER_LABEL)
+        year_data = year_data.sort_values("month_num")
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=year_data["quarter_label"], y=year_data["Total_vis"],
+                             marker_color="#27ae60", name="รวม",
+                             text=year_data["Total_vis"].apply(lambda x: f"{x:,.0f}"),
+                             textposition="outside"))
+        if "Thai_vis" in year_data.columns and year_data["Thai_vis"].notna().any():
+            fig.add_trace(go.Bar(x=year_data["quarter_label"], y=year_data["Thai_vis"],
+                                 marker_color="#2d6a9f", name="ไทย"))
+            fig.add_trace(go.Bar(x=year_data["quarter_label"], y=year_data["Foreign_vis"],
+                                 marker_color="#e67e22", name="ต่างชาติ"))
+        fig.update_layout(title=f"นักท่องเที่ยวรายไตรมาส ปี {sel_year}",
+                          barmode="group", height=420,
+                          plot_bgcolor="white", paper_bgcolor="white",
+                          xaxis_title="ไตรมาส", yaxis_title="จำนวน (คน)")
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.dataframe(
+            year_data[["quarter_label","Total_vis","Thai_vis","Foreign_vis",
+                       "MotoGP","Covid","Marathon","PhanomRung_Festival"]]
+            .rename(columns={"quarter_label":"ไตรมาส","Total_vis":"รวม",
+                             "Thai_vis":"ไทย","Foreign_vis":"ต่างชาติ"}),
+            use_container_width=True, hide_index=True
+        )
+    else:
+        year_data["month_label"] = year_data["month_num"].map(MONTH_TH)
+        year_data = year_data.sort_values("month_num")
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=year_data["month_label"], y=year_data["Total_vis"],
+                             marker_color="#2d6a9f", name="รวม",
+                             text=year_data["Total_vis"].apply(lambda x: f"{x:,.0f}"),
+                             textposition="outside"))
+        if year_data["Thai_vis"].notna().any():
+            fig.add_trace(go.Bar(x=year_data["month_label"], y=year_data["Thai_vis"],
+                                 marker_color="#3498db", name="ไทย"))
+            fig.add_trace(go.Bar(x=year_data["month_label"], y=year_data["Foreign_vis"],
+                                 marker_color="#e67e22", name="ต่างชาติ"))
+        # Mark events บนกราฟ
+        for _, row in year_data.iterrows():
+            events_here = []
+            if row["MotoGP"]==1:              events_here.append("🏍️")
+            if row["Marathon"]==1:            events_here.append("🏃")
+            if row["PhanomRung_Festival"]==1: events_here.append("🏯")
+            if row["Covid"]==1:               events_here.append("🦠")
+            if events_here:
+                fig.add_annotation(
+                    x=row["month_label"], y=row["Total_vis"],
+                    text=" ".join(events_here), showarrow=False,
+                    yshift=18, font=dict(size=14))
+        fig.update_layout(title=f"นักท่องเที่ยวรายเดือน ปี {sel_year}",
+                          barmode="group", height=440,
+                          plot_bgcolor="white", paper_bgcolor="white",
+                          xaxis_title="เดือน", yaxis_title="จำนวน (คน)")
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.dataframe(
+            year_data[["month_label","Total_vis","Thai_vis","Foreign_vis",
+                       "MotoGP","Covid","Marathon","PhanomRung_Festival"]]
+            .rename(columns={"month_label":"เดือน","Total_vis":"รวม",
+                             "Thai_vis":"ไทย","Foreign_vis":"ต่างชาติ"}),
+            use_container_width=True, hide_index=True
+        )
+
+    # เปรียบเทียบกับปีก่อน
+    st.markdown("<div class='section-header'>📊 เปรียบเทียบกับปีก่อน</div>", unsafe_allow_html=True)
+    prev_yr = sel_year - 1
+    if prev_yr in annual["Year"].values:
+        curr_row = annual[annual["Year"]==sel_year].iloc[0]
+        prev_row = annual[annual["Year"]==prev_yr].iloc[0]
+        diff = curr_row["Total_vis"] - prev_row["Total_vis"]
+        pct  = diff / prev_row["Total_vis"] * 100 if prev_row["Total_vis"] > 0 else 0
+        c1,c2,c3 = st.columns(3)
+        c1.metric(f"ปี {sel_year} รวม", f"{curr_row['Total_vis']:,.0f}")
+        c2.metric(f"ปี {prev_yr} รวม",  f"{prev_row['Total_vis']:,.0f}")
+        c3.metric("เปลี่ยนแปลง", f"{diff:+,.0f} ({pct:+.1f}%)",
+                  delta_color="normal" if diff>=0 else "inverse")
+
+# ═══════════════════════════════════════════════════════════
+# TAB 4: ผลกระทบเหตุการณ์  (Feature 2 + Feature 4)
+# ═══════════════════════════════════════════════════════════
+elif selected_tab == "🎪 ผลกระทบเหตุการณ์":
+    # Feature 4: บอกว่าเหตุการณ์เกิดเดือน/ไตรมาสไหน
+    st.markdown("<div class='section-header'>📅 เหตุการณ์สำคัญ — เดือน/ไตรมาสที่เกิดขึ้น</div>",
+                unsafe_allow_html=True)
+
+    for ev, info in EVENT_MONTHS.items():
+        month_names = [MONTH_TH.get(m, "") for m in info["months"]]
+        month_str   = " / ".join(month_names)
+        st.markdown(f"""
+        <div class='event-card {"negative" if ev=="Covid" else "positive"}'>
+            <b>{info["label"]}</b><br>
+            📅 <b>เดือนที่เกิด:</b> {month_str}<br>
+            📊 <b>ไตรมาส:</b> {info["quarter"]}
+        </div>""", unsafe_allow_html=True)
+
+    # ข้อมูลจากไฟล์จริง (ถ้ามี Football_Month)
+    if "Football_Month" in df.columns:
+        football_df = df[df["Football_match"].notna() & (df["Football_match"] != "")].copy()
+        if not football_df.empty:
+            st.markdown("**⚽ ฟุตบอล Chang Champions Cup**")
+            for _, row in football_df[["Year","Football_Month","Football_date","Football_match"]].drop_duplicates().iterrows():
+                st.markdown(f"""
+                <div class='event-card'>
+                    ⚽ <b>{row['Football_match']}</b> — ปี {int(row['Year'])} 
+                    เดือน {row.get('Football_Month','')} วันที่ {row.get('Football_date','')}
+                </div>""", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Feature 2: บอกว่าเหตุการณ์ส่งผลกระทบมากน้อยแค่ไหน
+    st.markdown("<div class='section-header'>📊 ผลกระทบของเหตุการณ์ต่อจำนวนนักท่องเที่ยว</div>",
+                unsafe_allow_html=True)
+
+    events_list  = ["MotoGP", "Marathon", "PhanomRung_Festival", "Covid"]
+    event_labels = {"MotoGP":"🏍️ MotoGP","Marathon":"🏃 Marathon",
+                    "PhanomRung_Festival":"🏯 Phanom Rung Festival","Covid":"🦠 COVID-19"}
+
+    impact_data = []
+    for ev in events_list:
+        has = annual[annual[ev]==1]["Total_vis"]
+        no  = annual[annual[ev]==0]["Total_vis"]
+        if len(has) > 0 and len(no) > 0:
+            diff  = has.mean() - no.mean()
+            pct   = diff / no.mean() * 100
+            impact_data.append({
+                "เหตุการณ์": event_labels[ev],
+                "เฉลี่ยเมื่อมี": has.mean(),
+                "เฉลี่ยเมื่อไม่มี": no.mean(),
+                "ผลต่าง": diff,
+                "ผลกระทบ (%)": pct,
+                "ev_key": ev,
+            })
+        c1,c2,c3,c4 = st.columns(4)
+        c1.markdown(f"**{event_labels[ev]}**")
+        if len(has) > 0:
+            c2.metric("เฉลี่ยเมื่อมี", f"{has.mean():,.0f}")
+        if len(no) > 0:
+            c3.metric("เฉลี่ยเมื่อไม่มี", f"{no.mean():,.0f}")
+        if len(has) > 0 and len(no) > 0:
+            diff = has.mean() - no.mean()
+            pct  = diff / no.mean() * 100
+            c4.metric("ผลกระทบ", f"{diff:+,.0f} ({pct:+.1f}%)",
+                      delta_color="normal" if diff>0 else "inverse")
+        st.markdown("---")
+
+    # กราฟแท่งแสดงผลกระทบรวม
+    if impact_data:
+        df_impact = pd.DataFrame(impact_data)
+        fig_impact = px.bar(
+            df_impact, x="เหตุการณ์", y="ผลกระทบ (%)",
+            color="ผลกระทบ (%)", color_continuous_scale="RdYlGn",
+            title="ผลกระทบของแต่ละเหตุการณ์ต่อจำนวนนักท่องเที่ยว (%)",
+            text=df_impact["ผลกระทบ (%)"].apply(lambda x: f"{x:+.1f}%")
+        )
+        fig_impact.update_layout(height=380, plot_bgcolor="white", paper_bgcolor="white",
+                                 yaxis_title="ผลกระทบ (%)", xaxis_title="")
+        st.plotly_chart(fig_impact, use_container_width=True)
+
+    # Feature Importance จาก Random Forest
+    if "Random Forest" in model_results:
+        st.markdown("<div class='section-header'>🔬 ความสำคัญของแต่ละปัจจัย (Random Forest)</div>",
+                    unsafe_allow_html=True)
+        importances = model_results["Random Forest"]["model"].feature_importances_
+        feat_labels = {
+            "Year_CE":"ปีปฏิทิน","prev_vis":"ยอดปีก่อน","prev2_vis":"ยอด 2 ปีก่อน",
+            "MotoGP":"🏍️ MotoGP","Covid":"🦠 COVID","Marathon":"🏃 Marathon",
+            "PhanomRung_Festival":"🏯 Phanom Rung"
+        }
+        fi_df = pd.DataFrame({
+            "ปัจจัย": [feat_labels.get(f,f) for f in feat_cols],
+            "ความสำคัญ (%)": importances*100
+        }).sort_values("ความสำคัญ (%)", ascending=True)
+        fig_fi = px.bar(fi_df, x="ความสำคัญ (%)", y="ปัจจัย", orientation="h",
+                        color="ความสำคัญ (%)", color_continuous_scale="Blues",
+                        title="ปัจจัยที่ส่งผลต่อการทำนายนักท่องเที่ยวมากที่สุด")
+        fig_fi.update_layout(height=380, plot_bgcolor="white", paper_bgcolor="white")
+        st.plotly_chart(fig_fi, use_container_width=True)
+
+# ═══════════════════════════════════════════════════════════
+# TAB 5: รายงานทำนายรายเดือน  (Feature 5)
+# ═══════════════════════════════════════════════════════════
+elif selected_tab == "📋 รายงานทำนายรายเดือน":
+    st.markdown("<div class='section-header'>📋 รายงาน: คาดการณ์เดือนที่มีนักท่องเที่ยวมากที่สุด ปี 2569</div>",
+                unsafe_allow_html=True)
+
+    # คำนวณสัดส่วนรายเดือนจากข้อมูลจริง (2567–2568)
+    if not monthly_df.empty and monthly_df["month_num"].notna().any():
+        share_df = forecast_monthly_2569(annual, monthly_df, pred_2569_custom)
+
+        if share_df is not None:
+            # คาดการณ์รายเดือน ปี 2569
+            share_df["est_total"]   = (share_df["share"]         * pred_2569_custom).round(0)
+            # ประมาณ Thai/Foreign จากสัดส่วน
+            total_thai    = annual.iloc[-1]["Thai_vis"]
+            total_foreign = annual.iloc[-1]["Foreign_vis"]
+            ratio_thai    = total_thai / (total_thai + total_foreign) if (total_thai+total_foreign) > 0 else 0.9
+            # ใช้สัดส่วนรายเดือนจริง ถ้ามี
+            if "thai_share" in share_df.columns and share_df["thai_share"].notna().any():
+                # สเกลให้รวมได้เท่ากับ total
+                thai_total_2569    = pred_2569_custom * ratio_thai
+                foreign_total_2569 = pred_2569_custom * (1 - ratio_thai)
+                share_df["est_thai"]    = (share_df["thai_share"]    * thai_total_2569).round(0)
+                share_df["est_foreign"] = (share_df["foreign_share"] * foreign_total_2569).round(0)
+            else:
+                share_df["est_thai"]    = (share_df["est_total"] * ratio_thai).round(0)
+                share_df["est_foreign"] = (share_df["est_total"] * (1-ratio_thai)).round(0)
+
+            share_df["month_name"] = share_df["month_num"].map(MONTH_TH)
+            share_df = share_df.sort_values("est_total", ascending=False).reset_index(drop=True)
+
+            # กราฟ Treemap เดือนที่คาดว่ามีนักท่องเที่ยวมากสุด
+            fig_tree = px.treemap(
+                share_df,
+                path=["month_name"], values="est_total",
+                color="est_total", color_continuous_scale="Blues",
+                title="ขนาดสัดส่วนคาดการณ์นักท่องเที่ยวรายเดือน ปี 2569"
+            )
+            fig_tree.update_layout(height=400)
+            st.plotly_chart(fig_tree, use_container_width=True)
+
+            # ─── รายงาน: Top 5 เดือน ───
+            st.markdown("---")
+            st.markdown("<div class='section-header'>🥇 Top 5 เดือนที่คาดว่ามีนักท่องเที่ยวมากที่สุด ปี 2569</div>",
+                        unsafe_allow_html=True)
+
+            top5_total   = share_df.head(5)
+            top5_thai    = share_df.sort_values("est_thai",    ascending=False).head(5)
+            top5_foreign = share_df.sort_values("est_foreign", ascending=False).head(5)
+
+            col_t, col_th, col_fo = st.columns(3)
+
+            def render_top5(col, header, df_top, val_col, color):
+                with col:
+                    st.markdown(f"**{header}**")
+                    for i, (_, row) in enumerate(df_top.iterrows()):
+                        events_this = []
+                        m = int(row["month_num"])
+                        for ev, info in EVENT_MONTHS.items():
+                            if ev != "Covid" and event_settings.get(ev, 0)==1 and m in info["months"]:
+                                events_this.append(info["label"].split()[0])
+                        ev_tag = " ".join(events_this)
+                        rank_color = ["#FFD700","#C0C0C0","#CD7F32","#4a90d9","#5cb85c"][i]
+                        st.markdown(f"""
+                        <div style='background:#f8f9fa;border-radius:10px;padding:10px 14px;
+                                    margin-bottom:8px;border-left:4px solid {rank_color};'>
+                            <span style='font-size:1.3rem;font-weight:bold;color:{rank_color};'>#{i+1}</span>
+                            <b style='font-size:1rem;margin-left:8px;'>{row["month_name"]}</b>
+                            <span style='float:right;color:{color};font-weight:bold;'>
+                                {row[val_col]:,.0f} คน
+                            </span><br>
+                            <span style='font-size:.75rem;color:#666;margin-left:28px;'>{ev_tag}</span>
+                        </div>""", unsafe_allow_html=True)
+
+            render_top5(col_t,  "🧑‍🤝‍🧑 รวมทั้งหมด",    top5_total,   "est_total",   "#2d6a9f")
+            render_top5(col_th, "🇹🇭 นักท่องเที่ยวไทย", top5_thai,    "est_thai",    "#27ae60")
+            render_top5(col_fo, "🌍 นักท่องเที่ยวต่างชาติ",top5_foreign,"est_foreign", "#e67e22")
+
+            # ─── ตารางสรุปรายเดือน ───
+            st.markdown("---")
+            st.markdown("<div class='section-header'>📊 ตารางคาดการณ์รายเดือนทั้งปี 2569</div>",
+                        unsafe_allow_html=True)
+            display_df = share_df[["month_name","est_total","est_thai","est_foreign"]].copy()
+            display_df.columns = ["เดือน","คาดการณ์รวม","คาดการณ์ไทย","คาดการณ์ต่างชาติ"]
+            display_df = display_df.sort_values("เดือน", key=lambda x:
+                x.map({v:k for k,v in MONTH_TH.items()}))
+
+            # เพิ่มคอลัมน์เหตุการณ์
+            def get_events_for_month(month_name):
+                m_num = {v:k for k,v in MONTH_TH.items()}.get(month_name)
+                evs = []
+                for ev, info in EVENT_MONTHS.items():
+                    if ev != "Covid" and event_settings.get(ev,0)==1 and m_num in info["months"]:
+                        evs.append(info["label"].split()[0] + info["label"].split()[1])
+                return " ".join(evs) if evs else "-"
+            display_df["เหตุการณ์"] = display_df["เดือน"].apply(get_events_for_month)
+
+            # format numbers
+            for col in ["คาดการณ์รวม","คาดการณ์ไทย","คาดการณ์ต่างชาติ"]:
+                display_df[col] = display_df[col].apply(lambda x: f"{int(x):,}")
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+            # กราฟเส้นรายเดือน
+            share_plot = share_df.sort_values("month_num")
+            fig_monthly = go.Figure()
+            fig_monthly.add_trace(go.Bar(
+                x=share_plot["month_name"], y=share_plot["est_total"],
+                name="รวม", marker_color="#2d6a9f",
+                text=share_plot["est_total"].apply(lambda x: f"{x:,.0f}"),
+                textposition="outside"
+            ))
+            fig_monthly.add_trace(go.Scatter(
+                x=share_plot["month_name"], y=share_plot["est_thai"],
+                mode="lines+markers", name="ไทย",
+                line=dict(color="#27ae60", width=2)
+            ))
+            fig_monthly.add_trace(go.Scatter(
+                x=share_plot["month_name"], y=share_plot["est_foreign"],
+                mode="lines+markers", name="ต่างชาติ",
+                line=dict(color="#e67e22", width=2)
+            ))
+            # Mark events
+            for ev, info in EVENT_MONTHS.items():
+                if ev != "Covid" and event_settings.get(ev, 0)==1:
+                    for m in info["months"]:
+                        m_name = MONTH_TH.get(m)
+                        match = share_plot[share_plot["month_num"]==m]
+                        if not match.empty:
+                            fig_monthly.add_annotation(
+                                x=m_name, y=match["est_total"].values[0],
+                                text=info["label"].split()[0], showarrow=False,
+                                yshift=22, font=dict(size=16))
+            fig_monthly.update_layout(
+                title="คาดการณ์นักท่องเที่ยวรายเดือน ปี 2569",
+                height=450, plot_bgcolor="white", paper_bgcolor="white",
+                xaxis_title="เดือน", yaxis_title="จำนวน (คน)"
+            )
+            st.plotly_chart(fig_monthly, use_container_width=True)
+
+            # ─── กล่องรายงานสรุป ───
+            top_month_total   = top5_total.iloc[0]["month_name"]
+            top_month_thai    = top5_thai.iloc[0]["month_name"]
+            top_month_foreign = top5_foreign.iloc[0]["month_name"]
+            st.markdown(f"""
+            <div class='report-box'>
+                <h3>📋 สรุปรายงานคาดการณ์ปี 2569</h3>
+                <p>จากการวิเคราะห์โดย <b>{best_name}</b> (R²={model_results[best_name]['R2']:.3f})</p>
+                <ul>
+                    <li>📌 <b>ยอดนักท่องเที่ยวรวมที่คาดการณ์:</b> {pred_2569_custom:,.0f} คน</li>
+                    <li>🥇 <b>เดือนที่คาดว่ามีนักท่องเที่ยวรวมมากสุด:</b> {top_month_total}</li>
+                    <li>🇹🇭 <b>เดือนที่คาดว่ามีนักท่องเที่ยวไทยมากสุด:</b> {top_month_thai}</li>
+                    <li>🌍 <b>เดือนที่คาดว่ามีนักท่องเที่ยวต่างชาติมากสุด:</b> {top_month_foreign}</li>
+                    <li>📊 <b>สมมติฐาน:</b> MotoGP={'มี' if event_settings['MotoGP'] else 'ไม่มี'} | 
+                        Marathon={'มี' if event_settings['Marathon'] else 'ไม่มี'} | 
+                        Phanom Rung={'มี' if event_settings['PhanomRung_Festival'] else 'ไม่มี'} | 
+                        COVID={'มี' if event_settings['Covid'] else 'ไม่มี'}</li>
+                </ul>
+                <p style='font-size:.85rem;color:#666;'>
+                    * การคาดการณ์รายเดือนใช้สัดส่วนเฉลี่ยจากข้อมูลรายเดือนปี 2567–2568 
+                    มาปรับสเกลตามยอดรวมที่โมเดลทำนาย
+                </p>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.warning("ไม่พบข้อมูลรายเดือนเพียงพอสำหรับสร้างรายงาน")
+    else:
+        st.warning("ข้อมูลรายเดือนไม่พร้อมใช้งาน (ต้องใช้ข้อมูลปี 2567–2568)")
+
+# ═══════════════════════════════════════════════════════════
+# TAB 6: เปรียบเทียบโมเดล
+# ═══════════════════════════════════════════════════════════
+elif selected_tab == "🤖 เปรียบเทียบโมเดล":
+    st.markdown("<div class='section-header'>🤖 เปรียบเทียบประสิทธิภาพโมเดล ML</div>", unsafe_allow_html=True)
+
     metrics_data = []
-    for name, res in results.items():
+    for name, res in model_results.items():
         metrics_data.append({
-            'โมเดล': name,
-            'MAE': f"{res['MAE']:,.0f}",
-            'RMSE': f"{res['RMSE']:,.0f}",
-            'R²': f"{res['R2']:.4f}",
-            'CV R²': f"{res['CV_R2']:.4f}",
-            'สถานะ': '🥇 ดีที่สุด' if name == best_name else ''
+            "โมเดล": name,
+            "MAE": f"{res['MAE']:,.0f}",
+            "RMSE": f"{res['RMSE']:,.0f}",
+            "R²": f"{res['R2']:.4f}",
+            "ทำนาย 2569": f"{predict_2569(res['model'], annual, event_settings):,.0f}",
+            "🏆": "✅ ดีที่สุด" if name == best_name else ""
         })
     st.dataframe(pd.DataFrame(metrics_data), use_container_width=True, hide_index=True)
-    
-    st.markdown(f"### 🏆 โมเดลที่เลือก: **{best_name}**")
-    r = results[best_name]
-    c1, c2, c3 = st.columns(3)
-    c1.metric("MAE", f"{r['MAE']:,.0f}", help="ค่าเฉลี่ยความคลาดเคลื่อนสัมบูรณ์")
-    c2.metric("RMSE", f"{r['RMSE']:,.0f}", help="ค่า Root Mean Squared Error")
-    c3.metric("R²", f"{r['R2']:.4f}", help="ค่า R-squared (1.0 = สมบูรณ์แบบ)")
-    
-    st.divider()
-    
-    # Actual vs Predicted chart
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=list(range(len(df_q))), y=df_q['Total_vis'],
-        mode='lines+markers', name='ค่าจริง', line=dict(color='#34d399', width=2)))
-    fig.add_trace(go.Scatter(x=list(range(len(df_q))), y=results[best_name]['y_pred'],
-        mode='lines+markers', name='ค่าทำนาย', line=dict(color='#f59e0b', width=2, dash='dot')))
-    
-    tick_labels = [f"Q{row['Quarter']}/{row['Year']}" for _, row in df_q.iterrows()]
-    fig.update_layout(
-        title=f"Actual vs Predicted — {best_name}",
-        xaxis=dict(tickvals=list(range(len(df_q))), ticktext=tick_labels, tickangle=45),
-        height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e5e7eb'), xaxis_gridcolor='#374151', yaxis_gridcolor='#374151',
-        legend=dict(bgcolor='rgba(0,0,0,0)')
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Bar chart comparing all models by R2
-    names = list(results.keys())
-    r2s = [results[n]['R2'] for n in names]
-    colors_bar = ['#a78bfa' if n == best_name else '#6b7280' for n in names]
-    fig2 = go.Figure(go.Bar(x=names, y=r2s, marker_color=colors_bar, text=[f"{v:.4f}" for v in r2s], textposition='outside'))
-    fig2.update_layout(title='R² Score เปรียบเทียบทุกโมเดล', height=320,
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e5e7eb'), yaxis=dict(range=[0,1.1], gridcolor='#374151'))
-    st.plotly_chart(fig2, use_container_width=True)
+    st.markdown("---")
 
+    # Radar
+    fig_radar = go.Figure()
+    for name, res in model_results.items():
+        r2_n  = max(0, res["R2"])
+        mae_n = 1 - min(1, res["MAE"] / annual["Total_vis"].mean())
+        rmse_n= 1 - min(1, res["RMSE"] / annual["Total_vis"].mean())
+        fig_radar.add_trace(go.Scatterpolar(
+            r=[r2_n, mae_n, rmse_n, r2_n],
+            theta=["R²","1-MAE (norm)","1-RMSE (norm)","R²"],
+            fill="toself", name=name
+        ))
+    fig_radar.update_layout(title="Radar Chart เปรียบเทียบโมเดล",
+                            polar=dict(radialaxis=dict(visible=True, range=[0,1])),
+                            height=450)
+    st.plotly_chart(fig_radar, use_container_width=True)
 
-# ─────────────────────────────────────────────
-# PAGE 4: PREDICT 2026 (2569)
-# ─────────────────────────────────────────────
-elif page == "📈 ทำนายปี 2569":
-    st.title("🔮 ทำนายสถิตินักท่องเที่ยวปี 2569 (2026)")
-    
-    st.markdown("""
-    > **หมายเหตุ:** การทำนายใช้ข้อมูลจากปี 2556–2568 (พ.ศ.) และ assumptions ของอีเวนต์ปี 2569:
-    > Q1 = MotoGP ✅ + Marathon ✅ | Q2 = Phanom Rung Festival ✅ | Q3-Q4 = งานปกติ
-    """)
-    
-    pred_2026_display = pred_2026.copy()
-    pred_2026_display['ไตรมาส'] = pred_2026_display['Quarter'].map(quarter_name)
-    
-    c1, c2, c3, c4 = st.columns(4)
-    cols = [c1, c2, c3, c4]
-    colors_q = ['#a78bfa', '#34d399', '#f59e0b', '#f43f5e']
-    for i, row in pred_2026_display.iterrows():
-        with cols[i]:
-            st.metric(
-                f"🔮 {row['ไตรมาส']}",
-                f"{int(row['Predicted_Total']):,}",
-                f"ไทย: {int(row['Predicted_Thai']):,} | ต่างชาติ: {int(row['Predicted_Foreign']):,}"
-            )
-    
-    st.divider()
-    
-    # Prediction bar chart
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        name='นักท่องเที่ยวไทย',
-        x=pred_2026_display['ไตรมาส'],
-        y=pred_2026_display['Predicted_Thai'],
-        marker_color='#34d399'
-    ))
-    fig.add_trace(go.Bar(
-        name='นักท่องเที่ยวต่างชาติ',
-        x=pred_2026_display['ไตรมาส'],
-        y=pred_2026_display['Predicted_Foreign'],
-        marker_color='#f59e0b'
-    ))
-    fig.update_layout(barmode='stack', title='ทำนายนักท่องเที่ยวปี 2569 รายไตรมาส',
-        height=380, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e5e7eb'), yaxis_gridcolor='#374151',
-        legend=dict(bgcolor='rgba(0,0,0,0)'))
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Historical comparison
-    st.markdown("### 📊 เปรียบเทียบกับปีก่อนหน้า")
-    recent_years = df_q[df_q['Year_CE'] >= 2020].copy()
-    yearly_recent = recent_years.groupby(['Year_CE','Year']).agg({'Total_vis':'sum'}).reset_index()
-    yearly_recent['ป ี'] = yearly_recent['Year'].astype(str) + ' (จริง)'
-    
-    pred_row = pd.DataFrame([{
-        'Year_CE': 2026, 'Year': 2569,
-        'Total_vis': pred_2026['Predicted_Total'].sum(),
-        'ปี': '2569 (ทำนาย)'
-    }])
-    
-    fig2 = go.Figure()
-    fig2.add_trace(go.Bar(x=yearly_recent['Year'].astype(str), y=yearly_recent['Total_vis'],
-        name='ค่าจริง', marker_color='#6b7280'))
-    fig2.add_trace(go.Bar(x=['2569'], y=[pred_2026['Predicted_Total'].sum()],
-        name='ทำนาย 2569', marker_color='#a78bfa'))
-    fig2.update_layout(title='เปรียบเทียบจำนวนนักท่องเที่ยวรวมรายปี (ล่าสุด)',
-        height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e5e7eb'), yaxis_gridcolor='#374151',
-        legend=dict(bgcolor='rgba(0,0,0,0)'))
-    st.plotly_chart(fig2, use_container_width=True)
+    # Residuals
+    st.markdown("<div class='section-header'>📉 Residual Plot</div>", unsafe_allow_html=True)
+    sel_model_name = st.selectbox("เลือกโมเดล", list(model_results.keys()))
+    residuals = annual["Total_vis"].values - model_results[sel_model_name]["y_pred"]
 
+    fig_res = make_subplots(rows=1, cols=2,
+                            subplot_titles=("Residuals over Years","Distribution of Residuals"))
+    fig_res.add_trace(go.Scatter(x=annual["Year"], y=residuals,
+                                 mode="lines+markers", name="Residuals",
+                                 line=dict(color="#e74c3c")), row=1, col=1)
+    fig_res.add_hline(y=0, line_dash="dash", line_color="gray")
+    fig_res.add_trace(go.Histogram(x=residuals, nbinsx=10,
+                                   marker_color="#2d6a9f", name="Distribution"), row=1, col=2)
+    fig_res.update_layout(height=380, showlegend=False, plot_bgcolor="white", paper_bgcolor="white")
+    st.plotly_chart(fig_res, use_container_width=True)
 
-# ─────────────────────────────────────────────
-# PAGE 5: EVENTS & IMPACT
-# ─────────────────────────────────────────────
-elif page == "🎪 อีเวนต์ & ผลกระทบ":
-    st.title("🎪 อีเวนต์สำคัญ & ผลกระทบต่อนักท่องเที่ยว")
-    
-    st.markdown("### 📅 อีเวนต์เกิดในไตรมาสใด")
-    event_quarters = {
-        '🏍️ MotoGP': 'Q1 (มกราคม – มีนาคม)',
-        '🏃 Marathon': 'Q1 (มกราคม – มีนาคม)',
-        '🏛️ Phanom Rung Festival': 'Q2 (เมษายน – มิถุนายน)',
-        '⚽ ฟุตบอล (ตลอดฤดูกาล)': 'Q1 – Q4 (ทุกไตรมาส)',
-        '😷 COVID-19': 'Q1 2563 – Q4 2565 (ส่งผลลบ)'
-    }
-    col1, col2 = st.columns(2)
-    for i, (ev, q) in enumerate(event_quarters.items()):
-        with (col1 if i % 2 == 0 else col2):
-            color = '#f87171' if 'COVID' in ev else '#a78bfa'
-            st.markdown(f"""
-            <div style='background:#1e2130;border-radius:8px;padding:14px 18px;margin:6px 0;border-left:3px solid {color}'>
-            <b style='font-size:1.05rem'>{ev}</b><br>
-            <span style='color:#9ca3af;font-size:0.9rem'>📅 {q}</span>
-            </div>""", unsafe_allow_html=True)
-    
-    st.divider()
-    st.markdown("### 📊 ผลกระทบเชิงสถิติของแต่ละอีเวนต์")
-    
-    for ev, label, color in [
-        ('MotoGP', '🏍️ MotoGP', '#a78bfa'),
-        ('Marathon', '🏃 Marathon', '#34d399'),
-        ('PhanomRung_Festival', '🏛️ Phanom Rung', '#f59e0b'),
-        ('Covid', '😷 COVID-19', '#f87171')
-    ]:
-        with_ev = df_q[df_q[ev] == 1]['Total_vis']
-        without_ev = df_q[df_q[ev] == 0]['Total_vis']
-        avg_with = with_ev.mean() if len(with_ev) > 0 else 0
-        avg_without = without_ev.mean() if len(without_ev) > 0 else 0
-        diff = avg_with - avg_without
-        pct = (diff / avg_without * 100) if avg_without > 0 else 0
-        n_with = len(with_ev)
-
-        arrow = "▲" if diff > 0 else "▼"
-        diff_color = "#34d399" if diff > 0 else "#f87171"
-        
-        st.markdown(f"""
-        <div style='background:#1e2130;border-radius:10px;padding:16px 20px;margin:8px 0;border-left:3px solid {color}'>
-        <b style='font-size:1rem'>{label}</b> — มี {n_with} ไตรมาสที่มีอีเวนต์นี้<br>
-        <span style='color:#9ca3af'>เฉลี่ยเมื่อมีอีเวนต์:</span> <b>{avg_with:,.0f}</b> &nbsp;|&nbsp; 
-        <span style='color:#9ca3af'>เฉลี่ยเมื่อไม่มี:</span> <b>{avg_without:,.0f}</b><br>
-        <span style='color:{diff_color};font-size:1.1rem;font-weight:bold'>{arrow} {abs(diff):,.0f} คน ({pct:+.1f}%)</span>
-        </div>""", unsafe_allow_html=True)
-    
-    st.divider()
-    st.markdown("### ⚽ ตารางแมตช์ฟุตบอล (จากข้อมูล)")
-    df_raw = pd.read_csv("dataCI02-09-03-2569.csv")
-    football_df = df_raw[df_raw['Football_match'].notna()][['Year','Month&Quarter','Football_date','Football_match']].copy()
-    football_df.columns = ['ปี (พ.ศ.)','เดือน/ไตรมาส','วันที่แข่ง','คู่แข่ง']
-    
-    year_sel = st.selectbox("เลือกปี", sorted(football_df['ปี (พ.ศ.)'].unique(), reverse=True))
-    st.dataframe(football_df[football_df['ปี (พ.ศ.)'] == year_sel], use_container_width=True, hide_index=True)
-
-
-# ─────────────────────────────────────────────
-# PAGE 6: HISTORICAL STATS
-# ─────────────────────────────────────────────
-elif page == "📅 สถิติรายปี":
-    st.title("📅 สถิติย้อนหลังรายปี")
-    
-    years_available = sorted(df_q['Year'].unique(), reverse=True)
-    selected_year = st.selectbox("เลือกปี (พ.ศ.)", years_available)
-    
-    year_data = df_q[df_q['Year'] == selected_year].copy()
-    year_data['ไตรมาส'] = year_data['Quarter'].map(quarter_name)
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("👥 นักท่องเที่ยวรวมทั้งปี", f"{int(year_data['Total_vis'].sum()):,}")
-    c2.metric("🇹🇭 นักท่องเที่ยวไทย", f"{int(year_data['Thai_vis'].sum()):,}")
-    c3.metric("✈️ นักท่องเที่ยวต่างชาติ", f"{int(year_data['Foreign_vis'].sum()):,}")
-    
-    # Quarterly bar
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=year_data['ไตรมาส'], y=year_data['Thai_vis'], name='ไทย', marker_color='#34d399'))
-    fig.add_trace(go.Bar(x=year_data['ไตรมาส'], y=year_data['Foreign_vis'], name='ต่างชาติ', marker_color='#f59e0b'))
-    fig.update_layout(
-        barmode='stack', title=f'นักท่องเที่ยวปี {selected_year} รายไตรมาส',
-        height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e5e7eb'), yaxis_gridcolor='#374151',
-        legend=dict(bgcolor='rgba(0,0,0,0)')
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Show events in that year
-    ev_cols = ['MotoGP','Covid','Marathon','PhanomRung_Festival']
-    ev_labels = {'MotoGP':'🏍️ MotoGP','Covid':'😷 COVID-19','Marathon':'🏃 Marathon','PhanomRung_Festival':'🏛️ Phanom Rung'}
-    
-    st.markdown("### 🎪 อีเวนต์ในปีนี้")
-    for _, row in year_data.iterrows():
-        events = [ev_labels[e] for e in ev_cols if row[e] == 1]
-        if events:
-            ev_str = " | ".join(events)
-            st.markdown(f"**{row['ไตรมาส']}:** {ev_str}")
-        else:
-            st.markdown(f"**{row['ไตรมาส']}:** — ไม่มีอีเวนต์พิเศษ")
-    
-    st.divider()
-    st.markdown("### 📋 ข้อมูลรายละเอียด")
-    detail = year_data[['ไตรมาส','Total_vis','Thai_vis','Foreign_vis','Occ_rate','Rev_total','Football_count']].copy()
-    detail.columns = ['ไตรมาส','นักท่องเที่ยวรวม','ไทย','ต่างชาติ','อัตราเข้าพัก (%)','รายได้ (ล้านบาท)','แมตช์ฟุตบอล']
-    st.dataframe(detail, use_container_width=True, hide_index=True)
-    
-    # All-years trend for reference
-    st.divider()
-    st.markdown("### 📈 แนวโน้มทุกปีเทียบกัน")
-    all_yearly = df_q.groupby('Year').agg({'Total_vis':'sum','Thai_vis':'sum','Foreign_vis':'sum'}).reset_index()
-    fig2 = px.bar(all_yearly, x='Year', y='Total_vis', color_discrete_sequence=['#7c3aed'],
-                  title='นักท่องเที่ยวรวมรายปี (พ.ศ.)')
-    fig2.add_vline(x=selected_year, line_dash='dash', line_color='#f59e0b', 
-                   annotation_text=f"ปี {selected_year}", annotation_font_color='#f59e0b')
-    fig2.update_layout(height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e5e7eb'), yaxis_gridcolor='#374151')
-    st.plotly_chart(fig2, use_container_width=True)
-
-
-# ─────────────────────────────────────────────
-# PAGE 7: TOP 5 MONTHS REPORT
-# ─────────────────────────────────────────────
-elif page == "📊 รายงานทำนาย Top 5 เดือน":
-    st.title("📊 รายงานทำนาย Top 5 เดือนปี 2569")
-    st.caption("คาดการณ์เดือนที่มีนักท่องเที่ยวไทย/ต่างชาติมากที่สุด 5 เดือนแรก")
-    
-    # Use monthly data for seasonal pattern
-    if len(df_m) > 0:
-        monthly_avg = df_m.groupby('Month&Quarter').agg({
-            'Total_vis':'mean', 'Thai_vis':'mean', 'Foreign_vis':'mean'
-        }).reset_index()
-        monthly_avg['month_num'] = monthly_avg['Month&Quarter'].map(month_num)
-        monthly_avg = monthly_avg.dropna(subset=['month_num'])
-        monthly_avg = monthly_avg.sort_values('month_num')
-        
-        # Scale to 2569 predicted annual total
-        pred_annual = pred_2026['Predicted_Total'].sum()
-        pred_thai_annual = pred_2026['Predicted_Thai'].sum()
-        pred_foreign_annual = pred_2026['Predicted_Foreign'].sum()
-        
-        total_monthly_avg = monthly_avg['Total_vis'].sum()
-        thai_monthly_avg = monthly_avg['Thai_vis'].sum()
-        foreign_monthly_avg = monthly_avg['Foreign_vis'].sum()
-        
-        monthly_avg['Pred_2569_Total'] = (monthly_avg['Total_vis'] / total_monthly_avg * pred_annual).astype(int)
-        monthly_avg['Pred_2569_Thai'] = (monthly_avg['Thai_vis'] / thai_monthly_avg * pred_thai_annual).astype(int)
-        monthly_avg['Pred_2569_Foreign'] = (monthly_avg['Foreign_vis'] / foreign_monthly_avg * pred_foreign_annual).astype(int)
-        
-        st.markdown("### 🥇 Top 5 เดือนที่มีนักท่องเที่ยวรวมมากที่สุด (2569)")
-        top5_total = monthly_avg.nlargest(5, 'Pred_2569_Total')[['Month&Quarter','Pred_2569_Total','Pred_2569_Thai','Pred_2569_Foreign']]
-        top5_total.columns = ['เดือน','ทำนายรวม','ทำนายไทย','ทำนายต่างชาติ']
-        top5_total['อันดับ'] = ['🥇','🥈','🥉','4️⃣','5️⃣']
-        
-        for _, row in top5_total.iterrows():
-            st.markdown(f"""
-            <div style='background:linear-gradient(135deg,#1e2130,#2d3250);border-radius:10px;padding:16px 20px;margin:8px 0;border-left:4px solid #a78bfa'>
-            <span style='font-size:1.4rem'>{row['อันดับ']}</span> &nbsp;
-            <b style='font-size:1.1rem;color:#a78bfa'>{row['เดือน']}</b><br>
-            <span style='color:#9ca3af'>รวม: </span><b style='color:#e5e7eb'>{int(row['ทำนายรวม']):,}</b> &nbsp;|&nbsp;
-            <span style='color:#34d399'>🇹🇭 ไทย: {int(row['ทำนายไทย']):,}</span> &nbsp;|&nbsp;
-            <span style='color:#f59e0b'>✈️ ต่างชาติ: {int(row['ทำนายต่างชาติ']):,}</span>
-            </div>""", unsafe_allow_html=True)
-        
-        st.divider()
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 🇹🇭 Top 5 เดือน นักท่องเที่ยวไทย")
-            top5_thai = monthly_avg.nlargest(5, 'Pred_2569_Thai')[['Month&Quarter','Pred_2569_Thai']]
-            fig = px.bar(top5_thai, x='Month&Quarter', y='Pred_2569_Thai',
-                color_discrete_sequence=['#34d399'], title='Top 5 เดือน (ไทย)')
-            fig.update_layout(height=320, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#e5e7eb'), yaxis_gridcolor='#374151', showlegend=False,
-                xaxis_title='', yaxis_title='จำนวนนักท่องเที่ยว')
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            st.markdown("### ✈️ Top 5 เดือน นักท่องเที่ยวต่างชาติ")
-            top5_foreign = monthly_avg.nlargest(5, 'Pred_2569_Foreign')[['Month&Quarter','Pred_2569_Foreign']]
-            fig2 = px.bar(top5_foreign, x='Month&Quarter', y='Pred_2569_Foreign',
-                color_discrete_sequence=['#f59e0b'], title='Top 5 เดือน (ต่างชาติ)')
-            fig2.update_layout(height=320, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#e5e7eb'), yaxis_gridcolor='#374151', showlegend=False,
-                xaxis_title='', yaxis_title='จำนวนนักท่องเที่ยว')
-            st.plotly_chart(fig2, use_container_width=True)
-        
-        st.divider()
-        st.markdown("### 📈 ทำนายรายเดือนทั้งปี 2569")
-        fig3 = go.Figure()
-        fig3.add_trace(go.Scatter(x=monthly_avg['Month&Quarter'], y=monthly_avg['Pred_2569_Thai'],
-            mode='lines+markers', name='🇹🇭 ไทย', line=dict(color='#34d399', width=2), fill='tozeroy',
-            fillcolor='rgba(52,211,153,0.1)'))
-        fig3.add_trace(go.Scatter(x=monthly_avg['Month&Quarter'], y=monthly_avg['Pred_2569_Foreign'],
-            mode='lines+markers', name='✈️ ต่างชาติ', line=dict(color='#f59e0b', width=2)))
-        fig3.update_layout(
-            title='คาดการณ์นักท่องเที่ยวรายเดือน ปี 2569',
-            height=380, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#e5e7eb'), xaxis_gridcolor='#374151', yaxis_gridcolor='#374151',
-            legend=dict(bgcolor='rgba(0,0,0,0)')
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-        
-        # Full table
-        st.markdown("### 📋 ตารางทำนายรายเดือนปี 2569 ครบทุกเดือน")
-        full_table = monthly_avg[['Month&Quarter','Pred_2569_Total','Pred_2569_Thai','Pred_2569_Foreign']].copy()
-        full_table.columns = ['เดือน','ทำนายรวม','ทำนายไทย','ทำนายต่างชาติ']
-        full_table['สัดส่วนไทย (%)'] = (full_table['ทำนายไทย'] / full_table['ทำนายรวม'] * 100).round(1)
-        st.dataframe(full_table, use_container_width=True, hide_index=True)
-    else:
-        st.warning("ไม่มีข้อมูลรายเดือนเพียงพอสำหรับทำนาย กรุณาตรวจสอบข้อมูล")
+    if sel_model_name in ["Random Forest","Gradient Boosting"]:
+        st.markdown("<div class='section-header'>📊 Feature Importance</div>", unsafe_allow_html=True)
+        importances = model_results[sel_model_name]["model"].feature_importances_
+        feat_labels = {
+            "Year_CE":"ปีปฏิทิน","prev_vis":"ยอดปีก่อน","prev2_vis":"ยอด 2 ปีก่อน",
+            "MotoGP":"🏍️ MotoGP","Covid":"🦠 COVID","Marathon":"🏃 Marathon",
+            "PhanomRung_Festival":"🏯 Phanom Rung"
+        }
+        fi_df = pd.DataFrame({
+            "Feature": [feat_labels.get(f,f) for f in feat_cols],
+            "Importance": importances
+        }).sort_values("Importance", ascending=True)
+        fig_fi = px.bar(fi_df, x="Importance", y="Feature", orientation="h",
+                        color="Importance", color_continuous_scale="Blues",
+                        title=f"Feature Importance — {sel_model_name}")
+        fig_fi.update_layout(height=350, plot_bgcolor="white", paper_bgcolor="white")
+        st.plotly_chart(fig_fi, use_container_width=True)
